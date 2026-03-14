@@ -108,7 +108,34 @@ app.use((req, res, next) => {
   next();
 });
 
-// Streamable HTTP (Claude, etc.)
+// OAuth metadata discovery - required by MCP 2025-03-26 spec for Perplexity
+app.get("/.well-known/oauth-authorization-server", (req, res) => {
+  const base = `${req.protocol}://${req.get("host")}`;
+  res.json({
+    issuer: base,
+    authorization_endpoint: `${base}/oauth/authorize`,
+    token_endpoint: `${base}/oauth/token`,
+    registration_endpoint: `${base}/oauth/register`,
+    response_types_supported: ["code"],
+    grant_types_supported: ["authorization_code"],
+    code_challenge_methods_supported: ["S256"]
+  });
+});
+
+// OAuth dynamic client registration
+app.post("/oauth/register", (req, res) => {
+  const clientId = `client_${Date.now()}`;
+  res.status(201).json({
+    client_id: clientId,
+    client_secret: "not-used",
+    redirect_uris: req.body.redirect_uris || [],
+    grant_types: ["authorization_code"],
+    response_types: ["code"],
+    token_endpoint_auth_method: "none"
+  });
+});
+
+// Streamable HTTP (Claude, Perplexity with streamable-http)
 app.all("/mcp", async (req, res) => {
   const server = createServer();
   const transport = new StreamableHTTPServerTransport({ sessionIdGenerator: undefined });
@@ -116,7 +143,7 @@ app.all("/mcp", async (req, res) => {
   await transport.handleRequest(req, res, req.body);
 });
 
-// SSE transport (Perplexity)
+// SSE transport (Perplexity SSE mode)
 const sseTransports = {};
 app.get("/sse", async (req, res) => {
   const transport = new SSEServerTransport("/messages", res);
